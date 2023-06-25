@@ -49,6 +49,35 @@ def main(
             linear1_size=1024,
             dropout_ratio=dropoutRatio
         )
+    elif architecture == 'ThreeConv2Lin_64_128_256_256':
+        neural_net = architectures.ThreeConv2Lin(
+            number_of_channels1=64,
+            number_of_channels2=128,
+            number_of_channels3=256,
+            linear1_size=256,
+            dropout_ratio=dropoutRatio
+        )
+    elif architecture == 'ThreeRes1Lin_64':
+        neural_net = architectures.ThreeRes1Lin(64)
+    elif architecture == 'Resx6Linx1_64':
+        neural_net = architectures.Resx6Linx1(64)
+    elif architecture == 'Resx3x3Linx1_64_32':
+        neural_net = architectures.Resx3x3Linx1(
+            residual_channels123=64,
+            residual_channels456=32
+        )
+    elif architecture == 'ResTrios_64_32_16':
+        neural_net = architectures.ResTrios(
+            residual_channels_list=[64, 32, 16]
+        )
+    elif architecture == 'ResTrios_128_64_32':
+        neural_net = architectures.ResTrios(
+            residual_channels_list=[128, 64, 32]
+        )
+    elif architecture == 'ResTrios_64_32':
+        neural_net = architectures.ResTrios(
+            residual_channels_list=[64, 32]
+        )
     else:
         raise NotImplementedError(f"Not implemented architecture '{architecture}'")
     neural_net.to(device)
@@ -57,9 +86,11 @@ def main(
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(neural_net.parameters(), lr=learningRate, weight_decay=weightDecay)
 
+    lowest_validation_loss = 1.0e9
+
     # Training monitoring file
     with open(os.path.join(outputDirectory, "epochLoss.csv"), 'w') as epoch_loss_file:
-        epoch_loss_file.write(f"epoch,training_loss,validation_loss,accuracy\n")
+        epoch_loss_file.write(f"epoch,training_loss,validation_loss,accuracy,is_champion\n")
         for epoch in range(numberOfEpochs):
             neural_net.train()
             running_loss = 0.0
@@ -105,9 +136,18 @@ def main(
             validation_loss = validation_running_loss/number_of_batches
             accuracy = number_of_correct_predictions/number_of_predictions
 
-            logging.info(f" **** Epoch {epoch} ****\ntraining_loss = {training_loss}; validation_loss = {validation_loss}; accuracy = {accuracy}")
+            is_champion = False
+            if validation_loss < lowest_validation_loss:
+                lowest_validation_loss = validation_loss
+                is_champion = True
+                neural_net_filepath = os.path.join(outputDirectory, f"{architecture}.pth")
+                torch.save(neural_net.state_dict(), neural_net_filepath)
 
-            epoch_loss_file.write(f"{epoch},{training_loss},{validation_loss},{accuracy}\n")
+            logging.info(f" **** Epoch {epoch} ****\ntraining_loss = {training_loss}; validation_loss = {validation_loss}; accuracy = {accuracy}")
+            if is_champion:
+                logging.info(f" + + + + Champion for validation loss! Saving {neural_net_filepath} + + + +")
+
+            epoch_loss_file.write(f"{epoch},{training_loss},{validation_loss},{accuracy},{is_champion}\n")
 
 def numberOfCorrectPredictions(predictions_tsr, target_class_tsr):
     return sum(torch.argmax(predictions_tsr, dim=1) == target_class_tsr).item()
@@ -116,7 +156,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('datasetDirectory', help="The directory containing the 'stl10_binary' directory")
     parser.add_argument('--outputDirectory', help="The output directory. Default: './output_train_stl10'", default='./output_train_stl10')
-    parser.add_argument('--batchSize', help="The batch size. Default: 16", type=int, default=16)
+    parser.add_argument('--batchSize', help="The batch size. Default: 64", type=int, default=64)
     parser.add_argument('--architecture', help="The neural network architecture. Default: 'ThreeConv2Lin_64_128_256_1024'", default='ThreeConv2Lin_64_128_256_1024')
     parser.add_argument('--dropoutRatio', help="The dropout ratio. Default: 0.5", type=float, default=0.5)
     parser.add_argument('--learningRate', help="The learning rate. Default: 0.001", type=float, default=0.001)
