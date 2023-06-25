@@ -16,7 +16,8 @@ def main(
     learningRate,
     weightDecay,
     numberOfEpochs,
-    useCuda
+    useCuda,
+    saveAccuracyChampion
 ):
     logging.info(f"train_stl10.main(); useCuda = {useCuda}; architecture = {architecture}")
 
@@ -78,6 +79,10 @@ def main(
         neural_net = architectures.ResTrios(
             residual_channels_list=[64, 32]
         )
+    elif architecture == 'ResTrios_32_32_32':
+        neural_net = architectures.ResTrios(
+            residual_channels_list=[32, 32, 32]
+        )
     else:
         raise NotImplementedError(f"Not implemented architecture '{architecture}'")
     neural_net.to(device)
@@ -87,6 +92,10 @@ def main(
     optimizer = torch.optim.Adam(neural_net.parameters(), lr=learningRate, weight_decay=weightDecay)
 
     lowest_validation_loss = 1.0e9
+    highest_accuracy = 0.0
+    championship_criterion = "validation loss"
+    if saveAccuracyChampion:
+        championship_criterion = "accuracy"
 
     # Training monitoring file
     with open(os.path.join(outputDirectory, "epochLoss.csv"), 'w') as epoch_loss_file:
@@ -139,13 +148,22 @@ def main(
             is_champion = False
             if validation_loss < lowest_validation_loss:
                 lowest_validation_loss = validation_loss
-                is_champion = True
+                if not saveAccuracyChampion:
+                    is_champion = True
+
+            if accuracy > highest_accuracy:
+                highest_accuracy = accuracy
+                if saveAccuracyChampion:
+                    is_champion = True
+
+            if is_champion:
                 neural_net_filepath = os.path.join(outputDirectory, f"{architecture}.pth")
                 torch.save(neural_net.state_dict(), neural_net_filepath)
 
+
             logging.info(f" **** Epoch {epoch} ****\ntraining_loss = {training_loss}; validation_loss = {validation_loss}; accuracy = {accuracy}")
             if is_champion:
-                logging.info(f" + + + + Champion for validation loss! Saving {neural_net_filepath} + + + +")
+                logging.info(f" + + + + Champion for {championship_criterion}! Saving {neural_net_filepath} + + + +")
 
             epoch_loss_file.write(f"{epoch},{training_loss},{validation_loss},{accuracy},{is_champion}\n")
 
@@ -163,6 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('--weightDecay', help="The weight decay. Default: 0.00001", type=float, default=0.00001)
     parser.add_argument('--numberOfEpochs', help="The number of epochs. Default: 50", type=int, default=50)
     parser.add_argument('--useCpu', help="Use CPU, even if there is a GPU", action='store_true')
+    parser.add_argument('--saveAccuracyChampion', help="Save the accuracy champion, instead of the validation loss champion", action='store_true')
     args = parser.parse_args()
 
     useCuda = torch.cuda.is_available() and not args.useCpu
@@ -176,5 +195,6 @@ if __name__ == '__main__':
         args.learningRate,
         args.weightDecay,
         args.numberOfEpochs,
-        useCuda
+        useCuda,
+        args.saveAccuracyChampion
     )
